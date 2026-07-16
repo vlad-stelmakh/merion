@@ -13,10 +13,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.enums import ParseMode
-from aiogram.types import Message
+from aiogram.types import BufferedInputFile, Message
 from dotenv import load_dotenv
 
-from generator import generate_comment
+from output import MatchOutput, build_match_output
 from parser import extract_youtube_urls, parse_match_results
 
 load_dotenv()
@@ -24,28 +24,27 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-HELP_TEXT = """Привет! Я собираю комментарий с таймкодами голов для YouTube.
+HELP_TEXT = """Привет! Я делаю <b>картинку с результатом</b> и подпись с таймкодами для YouTube.
 
 <b>Быстрый способ</b> — одним сообщением:
 1. Текст с результатами
-2. Две ссылки на 1-й и 2-й тайм (в любом порядке, можно с пометками #1 и #2)
+2. Две ссылки на 1-й и 2-й тайм
 
 <b>Пошаговый способ</b>
-/start → /new → текст → ссылка 1-го тайма → ссылка 2-го тайма
+/new → текст → ссылка 1-го тайма → ссылка 2-го тайма
 
 <b>Формат результатов</b>
-<code>FC Kucha 3:6 FC Serega United
+<code>YFC Pakuta 6:2 City United FC
 
-15' Filipp PlusMinus (Sandro Karchava)
-22' Filipp PlusMinus (Dima Semin)
-40' Bobeeo — Sandro Karchava (автогол)
+4' David Benidze (Vova Orange)
+8' Vova Orange (David Benidze)
+18' Luka Kaladze (Arthur Parkour)
 
-Evgensky 11', 20', 31'
-Andrei Tereshkov 33'
-Egor Levin 20', 49' (Levan Kviki)</code>
+6' Efim Tarasenko (Danya Shangin)
+20' Efim Tarasenko (Danya Shangin)</code>
 
-Таймкод = минута гола − 10 секунд.
-Голы до 45' → 1-е видео, остальные → 2-е.
+Между голами разных команд — пустая строка.
+Таймкод в подписи = минута гола − 10 секунд.
 """
 
 
@@ -61,7 +60,7 @@ def _assign_half_urls(urls: list[str]) -> tuple[str, str] | None:
     return urls[0], urls[1]
 
 
-def _try_generate_from_single_message(text: str) -> str | None:
+def _try_generate_from_single_message(text: str) -> MatchOutput | None:
     urls = extract_youtube_urls(text)
     if len(urls) < 2:
         return None
@@ -71,7 +70,12 @@ def _try_generate_from_single_message(text: str) -> str | None:
         return None
 
     first_url, second_url = urls[0], urls[1]
-    return generate_comment(match, first_url, second_url)
+    return build_match_output(match, first_url, second_url)
+
+
+async def _send_result(message: Message, result: MatchOutput) -> None:
+    photo = BufferedInputFile(result.image_png, filename="match_result.png")
+    await message.answer_photo(photo=photo, caption=result.caption)
 
 
 async def cmd_start(message: Message, state: FSMContext) -> None:
@@ -104,7 +108,7 @@ async def handle_results(message: Message, state: FSMContext) -> None:
     ready = _try_generate_from_single_message(text)
     if ready:
         await state.clear()
-        await message.answer(ready)
+        await _send_result(message, ready)
         return
 
     match = parse_match_results(text)
@@ -154,20 +158,20 @@ async def handle_second_half_url(message: Message, state: FSMContext) -> None:
 
     try:
         match = parse_match_results(results_text)
-        comment = generate_comment(match, first_half_url, urls[0])
+        result = build_match_output(match, first_half_url, urls[0])
     except ValueError as exc:
         await message.answer(f"Ошибка: {exc}")
         return
 
     await state.clear()
-    await message.answer(comment)
+    await _send_result(message, result)
 
 
 async def handle_outside_flow(message: Message, state: FSMContext) -> None:
     text = message.text or ""
     ready = _try_generate_from_single_message(text)
     if ready:
-        await message.answer(ready)
+        await _send_result(message, ready)
         return
 
     urls = extract_youtube_urls(text)

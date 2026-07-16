@@ -1,6 +1,6 @@
 # YouTube Goals Comment Bot
 
-Telegram-бот, который принимает текст с результатами футбольного матча и две ссылки на записи 1-го и 2-го тайма на YouTube, а в ответ отдаёт готовый комментарий с таймкодами голов (минус 10 секунд от минуты гола).
+Telegram-бот, который принимает текст с результатами футбольного матча и две ссылки на записи 1-го и 2-го тайма на YouTube. В ответ отправляет **PNG-карточку** с результатом (как в лиге F.F.F.) и подпись с таймкодами для комментария (минус 10 секунд от минуты гола).
 
 ## Быстрый старт
 
@@ -32,19 +32,23 @@ python bot.py
 ### Одним сообщением
 
 ```
-FC Kucha 3:6 FC Serega United
+YFC Pakuta 6:2 City United FC
 
-15' Filipp PlusMinus (Sandro Karchava)
-22' Filipp PlusMinus (Dima Semin)
-40' Bobeeo — Sandro Karchava (автогол)
+4' David Benidze (Vova Orange)
+8' Vova Orange (David Benidze)
+18' Luka Kaladze (Arthur Parkour)
+23' Arthur Parkour (Luka Kaladze)
+38' Arman (David Benidze)
+45' Luka Kaladze (Arthur Parkour)
 
-Evgensky 11', 20', 31'
-Andrei Tereshkov 33'
-Egor Levin 20', 49' (Levan Kviki)
+6' Efim Tarasenko (Danya Shangin)
+20' Efim Tarasenko (Danya Shangin)
 
 https://www.youtube.com/watch?v=VIDEO_1ST_HALF
 https://www.youtube.com/watch?v=VIDEO_2ND_HALF
 ```
+
+**Важно:** между голами разных команд — пустая строка.
 
 ### Пошагово
 
@@ -52,6 +56,11 @@ https://www.youtube.com/watch?v=VIDEO_2ND_HALF
 2. Текст с результатами
 3. Ссылка на 1-й тайм
 4. Ссылка на 2-й тайм
+
+## Что получаешь
+
+1. **Картинка** — зелёная карточка со счётом, двумя колонками голов и минутами (`4' ⚽ Игрок (ассист)`)
+2. **Подпись к фото** — текст с YouTube-ссылками и таймкодами (−10 сек)
 
 ## Логика таймкодов
 
