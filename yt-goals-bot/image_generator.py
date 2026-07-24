@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from generator import minute_to_seconds, seconds_to_timestamp
-from parser import Goal, MatchResult
+from parser import Goal, Half, MatchResult
 
 # Цвета в стиле примера
 BG_COLOR = (34, 120, 68)
@@ -67,6 +67,10 @@ def _goals_for_side(match: MatchResult, side: str) -> list[Goal]:
         ordered = sorted(match.goals, key=lambda g: g.minute)
         return ordered[-match.score_away :]
     return []
+
+
+def _goals_for_half(match: MatchResult, half: Half) -> list[Goal]:
+    return sorted([g for g in match.goals if g.half == half], key=lambda g: g.minute)
 
 
 def _draw_logo(
@@ -157,6 +161,16 @@ def generate_match_image(match: MatchResult, league_title: str = LEAGUE_TITLE) -
 
     home_goals = _goals_for_side(match, "home")
     away_goals = _goals_for_side(match, "away")
+
+    # Формат «1-й тайм / 2-й тайм» без команд — колонки по таймам
+    if not home_goals and not away_goals:
+        home_goals = _goals_for_half(match, Half.FIRST)
+        away_goals = _goals_for_half(match, Half.SECOND)
+        home_team = "1-й тайм"
+        away_team = "2-й тайм"
+        score_home = len(home_goals)
+        score_away = len(away_goals)
+
     max_goal_rows = max(len(home_goals), len(away_goals), 1)
 
     goal_font = _font(20)

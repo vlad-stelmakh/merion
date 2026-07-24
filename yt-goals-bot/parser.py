@@ -38,11 +38,11 @@ MINUTE_FIRST_RE = re.compile(
 )
 MINUTE_TOKEN_RE = re.compile(r"(\d{1,3})\s*['′`]")
 HALF_MARKER_RE = re.compile(
-    r"(?:^|\b)(?:1\s*[-.]?\s*(?:й|й)?\s*тайм|первый\s+тайм|1\s*т)\b",
+    r"^\s*(?:1\s*[-.]?\s*й\s*тайм|первый\s+тайм|1\s*т)\s*$",
     re.IGNORECASE,
 )
 SECOND_HALF_MARKER_RE = re.compile(
-    r"(?:^|\b)(?:2\s*[-.]?\s*(?:й|й)?\s*тайм|второй\s+тайм|2\s*т)\b",
+    r"^\s*(?:2\s*[-.]?\s*й\s*тайм|второй\s+тайм|2\s*т)\s*$",
     re.IGNORECASE,
 )
 YOUTUBE_URL_RE = re.compile(
@@ -73,14 +73,19 @@ def _parse_score_line(line: str) -> tuple[str, str, int, int] | None:
     )
 
 
+def _resolve_half(minute: int, current_half: Half) -> Half:
+    if minute > 45:
+        return Half.SECOND
+    return current_half
+
+
 def _goals_from_minute_first_line(line: str, half: Half) -> list[Goal]:
     match = MINUTE_FIRST_RE.match(line)
     if not match:
         return []
     minute = int(match.group("minute"))
     scorer = match.group("scorer").strip()
-    goal_half = Half.SECOND if minute > 45 else half
-    return [Goal(minute=minute, scorer=scorer, half=goal_half)]
+    return [Goal(minute=minute, scorer=scorer, half=_resolve_half(minute, half))]
 
 
 def _goals_from_scorer_line(line: str, half: Half) -> list[Goal]:
@@ -94,11 +99,28 @@ def _goals_from_scorer_line(line: str, half: Half) -> list[Goal]:
     if not scorer:
         return []
 
-    goals: list[Goal] = []
-    for minute in minutes:
-        goal_half = Half.SECOND if minute > 45 else half
-        goals.append(Goal(minute=minute, scorer=scorer, half=goal_half))
-    return goals
+    return [
+        Goal(minute=minute, scorer=scorer, half=_resolve_half(minute, half))
+        for minute in minutes
+    ]
+
+
+def _is_half_marker(line: str) -> Half | None:
+    if SECOND_HALF_MARKER_RE.match(line):
+        return Half.SECOND
+    if HALF_MARKER_RE.match(line):
+        return Half.FIRST
+    return None
+
+
+def _block_has_goals(block: str) -> bool:
+    for line in block.splitlines():
+        line = line.strip()
+        if not line or _is_half_marker(line) or _parse_score_line(line):
+            continue
+        if _goals_from_minute_first_line(line, Half.FIRST) or _goals_from_scorer_line(line, Half.FIRST):
+            return True
+    return False
 
 
 def parse_match_results(text: str) -> MatchResult:
@@ -111,59 +133,64 @@ def parse_match_results(text: str) -> MatchResult:
     score_away: int | None = None
     goals: list[Goal] = []
 
-    blocks = [block.strip() for block in re.split(r"\n\s*\n", text) if block.strip()]
+    has_half_markers = bool(
+        HALF_MARKER_RE.search(text, re.MULTILINE) or SECOND_HALF_MARKER_RE.search(text, re.MULTILINE)
+    )
+
+    # Разделение команд по пустым строкам (если нет явных таймов)
+    goal_blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip() and _block_has_goals(b)]
+    goal_block_sides: dict[int, str] = {}
+    if not has_half_markers and goal_blocks:
+        for idx in range(len(goal_blocks)):
+            goal_block_sides[idx] = "home" if idx == 0 else "away"
+
+    current_half = Half.FIRST
+    seen_scorer_style = False
+    current_side = "home"
     goal_block_index = 0
+    in_goal_block = False
 
-    for block in blocks:
-        lines = [line.strip() for line in block.splitlines() if line.strip()]
-        if not lines:
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if in_goal_block:
+                goal_block_index += 1
+                in_goal_block = False
             continue
 
-        score = _parse_score_line(lines[0])
-        if score and len(lines) == 1:
-            home_team, away_team, score_home, score_away = score
+        half_marker = _is_half_marker(line)
+        if half_marker is not None:
+            current_half = half_marker
             continue
 
+        score = _parse_score_line(line)
         if score:
             home_team, away_team, score_home, score_away = score
-            lines = lines[1:]
+            continue
 
-        side = "home" if goal_block_index == 0 else "away"
-        goal_block_index += 1
+        if not in_goal_block:
+            in_goal_block = True
+            if not has_half_markers and goal_block_index in goal_block_sides:
+                current_side = goal_block_sides[goal_block_index]
 
-        current_half = Half.FIRST
-        seen_scorer_style = False
-        current_side = side
+        minute_goals = _goals_from_minute_first_line(line, current_half)
+        if minute_goals:
+            for goal in minute_goals:
+                goal.side = None if has_half_markers else current_side
+                goals.append(goal)
+            continue
 
-        for line in lines:
-            if SECOND_HALF_MARKER_RE.search(line):
+        scorer_goals = _goals_from_scorer_line(line, current_half)
+        if scorer_goals:
+            if not seen_scorer_style and goals and not has_half_markers:
+                current_side = "away"
                 current_half = Half.SECOND
-                continue
-            if HALF_MARKER_RE.search(line) and not SECOND_HALF_MARKER_RE.search(line):
-                current_half = Half.FIRST
-                continue
-
-            if _parse_score_line(line):
-                continue
-
-            minute_goals = _goals_from_minute_first_line(line, current_half)
-            if minute_goals:
-                for goal in minute_goals:
-                    goal.side = current_side
-                    goals.append(goal)
-                continue
-
-            scorer_goals = _goals_from_scorer_line(line, current_half)
-            if scorer_goals:
-                if not seen_scorer_style and goals:
-                    current_side = "away"
-                    current_half = Half.SECOND
-                seen_scorer_style = True
-                for goal in scorer_goals:
-                    if goal.minute <= 45 and current_half == Half.SECOND and goal.half != Half.SECOND:
-                        goal.half = Half.SECOND
-                    goal.side = current_side
-                    goals.append(goal)
+            seen_scorer_style = True
+            for goal in scorer_goals:
+                if goal.minute <= 45 and current_half == Half.SECOND:
+                    goal.half = Half.SECOND
+                goal.side = None if has_half_markers else current_side
+                goals.append(goal)
 
     return MatchResult(
         home_team=home_team,

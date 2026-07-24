@@ -4,7 +4,7 @@ import unittest
 
 from generator import generate_comment, minute_to_seconds, seconds_to_timestamp
 from image_generator import generate_match_image
-from parser import parse_match_results
+from parser import Half, parse_match_results
 
 
 EXAMPLE_TEXT = """FC Kucha 3:6 FC Serega United
@@ -54,7 +54,43 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(len(away), 2)
 
 
-class GeneratorTests(unittest.TestCase):
+HALF_FORMAT_TEXT = """1-й тайм
+
+6' Олег Степанов (Дима Дидимер)
+13' Серго (Дима Дидимер)
+16' Женя Ответра
+20' Женя Ответра
+21' Женя Ответра (Олег Степанов)
+30' Миша Юров (Сандро Карчава)
+33' Олег Степанов (Женя Ответра)
+35' Соута
+40' Александр Косенков (Андрей Раб)
+
+2-й тайм
+
+41' Александр Косенков
+48' Александр Косенков"""
+
+
+class HalfFormatTests(unittest.TestCase):
+    def test_parse_half_sections(self) -> None:
+        match = parse_match_results(HALF_FORMAT_TEXT)
+        self.assertEqual(len(match.goals), 11)
+        first = [g for g in match.goals if g.half == Half.FIRST]
+        second = [g for g in match.goals if g.half == Half.SECOND]
+        self.assertEqual(len(first), 9)
+        self.assertEqual(len(second), 2)
+        self.assertEqual(second[0].minute, 41)
+        self.assertEqual(second[1].minute, 48)
+
+    def test_half_format_youtube_timestamps(self) -> None:
+        match = parse_match_results(HALF_FORMAT_TEXT)
+        comment = generate_comment(match, "https://youtu.be/a", "https://youtu.be/b")
+        self.assertIn("5:50 — Олег Степанов", comment)
+        self.assertIn("40:50 — Александр Косенков", comment)
+        self.assertIn("47:50 — Александр Косенков", comment)
+
+
     def test_timestamp_offset(self) -> None:
         self.assertEqual(minute_to_seconds(15), 15 * 60 - 10)
         self.assertEqual(seconds_to_timestamp(650), "10:50")
