@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+import os
 import re
 from urllib.parse import parse_qs, urlparse
 
 from parser import Goal, Half, MatchResult
 
-OFFSET_SECONDS = 10
+OFFSET_SECONDS = int(os.getenv("YT_OFFSET_SECONDS", "10"))
+HALF_MINUTES = int(os.getenv("HALF_MINUTES", "25"))
+
+
+def goal_video_minute(goal: Goal, half_minutes: int = HALF_MINUTES) -> int:
+    """Минута внутри конкретного YouTube-видео тайма."""
+    if goal.half == Half.SECOND and goal.minute > half_minutes:
+        return goal.minute - half_minutes
+    return goal.minute
+
+
+def goal_to_seconds(goal: Goal) -> int:
+    video_minute = goal_video_minute(goal)
+    return max(0, video_minute * 60 - OFFSET_SECONDS)
 
 
 def minute_to_seconds(minute: int) -> int:
@@ -22,6 +36,10 @@ def seconds_to_timestamp(seconds: int) -> str:
         minutes = minutes % 60
         return f"{hours}:{minutes:02d}:{secs:02d}"
     return f"{minutes}:{secs:02d}"
+
+
+def goal_to_timestamp(goal: Goal) -> str:
+    return seconds_to_timestamp(goal_to_seconds(goal))
 
 
 def extract_video_id(url: str) -> str | None:
@@ -46,14 +64,6 @@ def extract_video_id(url: str) -> str | None:
 
 def build_youtube_link(video_id: str, seconds: int) -> str:
     return f"https://www.youtube.com/watch?v={video_id}&t={seconds}s"
-
-
-def _goal_video_id(goal: Goal, first_half_url: str, second_half_url: str) -> str:
-    video_url = first_half_url if goal.half == Half.FIRST else second_half_url
-    video_id = extract_video_id(video_url)
-    if not video_id:
-        raise ValueError(f"Не удалось извлечь ID видео из ссылки: {video_url}")
-    return video_id
 
 
 def generate_comment(
@@ -90,14 +100,12 @@ def generate_comment(
     if first_half_goals:
         lines.append("1-й тайм")
         for goal in first_half_goals:
-            ts = seconds_to_timestamp(minute_to_seconds(goal.minute))
-            lines.append(f"{ts} — {goal.scorer}")
+            lines.append(f"{goal_to_timestamp(goal)} — {goal.scorer}")
         lines.append("")
 
     if second_half_goals:
         lines.append("2-й тайм")
         for goal in second_half_goals:
-            ts = seconds_to_timestamp(minute_to_seconds(goal.minute))
-            lines.append(f"{ts} — {goal.scorer}")
+            lines.append(f"{goal_to_timestamp(goal)} — {goal.scorer}")
 
     return "\n".join(lines).strip()

@@ -2,7 +2,7 @@
 
 import unittest
 
-from generator import generate_comment, minute_to_seconds, seconds_to_timestamp
+from generator import generate_comment, goal_to_seconds, goal_to_timestamp, goal_video_minute, minute_to_seconds, seconds_to_timestamp
 from image_generator import generate_match_image
 from parser import Half, parse_match_results
 
@@ -87,8 +87,16 @@ class HalfFormatTests(unittest.TestCase):
         match = parse_match_results(HALF_FORMAT_TEXT)
         comment = generate_comment(match, "https://youtu.be/a", "https://youtu.be/b")
         self.assertIn("5:50 — Олег Степанов", comment)
-        self.assertIn("40:50 — Александр Косенков", comment)
-        self.assertIn("47:50 — Александр Косенков", comment)
+        self.assertIn("39:50 — Александр Косенков (Андрей Раб)", comment)
+        self.assertIn("15:50 — Александр Косенков", comment)
+        self.assertIn("22:50 — Александр Косенков", comment)
+        self.assertNotIn("40:50", comment)
+
+    def test_second_half_video_minute(self) -> None:
+        match = parse_match_results(HALF_FORMAT_TEXT)
+        second = [g for g in match.goals if g.half == Half.SECOND]
+        self.assertEqual(goal_video_minute(second[0]), 16)  # 41' → 16' видео
+        self.assertEqual(goal_to_timestamp(second[0]), "15:50")
 
 
     def test_timestamp_offset(self) -> None:

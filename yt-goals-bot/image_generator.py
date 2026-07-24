@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from generator import minute_to_seconds, seconds_to_timestamp
+from generator import goal_to_timestamp
 from parser import Goal, Half, MatchResult
 
 # Цвета в стиле примера
@@ -126,9 +126,9 @@ def _text_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont)
     return bbox[2] - bbox[0]
 
 
-def _goal_line_parts(minute: int, scorer: str) -> tuple[str, str | None]:
-    name, assist = _split_scorer_assist(scorer)
-    yt_time = seconds_to_timestamp(minute_to_seconds(minute))
+def _goal_line_parts(goal: Goal) -> tuple[str, str | None]:
+    name, assist = _split_scorer_assist(goal.scorer)
+    yt_time = goal_to_timestamp(goal)
     return yt_time, name + (f" {assist}" if assist else "")
 
 
@@ -136,12 +136,11 @@ def _draw_goal_line(
     draw: ImageDraw.ImageDraw,
     x: int,
     y: int,
-    minute: int,
-    scorer: str,
+    goal: Goal,
     font: ImageFont.ImageFont,
     max_width: int,
 ) -> int:
-    minute_text, player_text = _goal_line_parts(minute, scorer)
+    minute_text, player_text = _goal_line_parts(goal)
     draw.text((x, y), minute_text, fill=GOAL_COLOR, font=font)
     cursor = x + _text_width(draw, minute_text + " ", font) + 2
     cursor = _draw_ball(draw, cursor, y + 6)
@@ -251,7 +250,7 @@ def generate_match_image(match: MatchResult, league_title: str = LEAGUE_TITLE) -
     def draw_goal_column(goals: list[Goal], x: int) -> None:
         y = goals_top
         for goal in goals:
-            y = _draw_goal_line(draw, x, y, goal.minute, goal.scorer, goal_font, col_width)
+            y = _draw_goal_line(draw, x, y, goal, goal_font, col_width)
 
     draw_goal_column(home_goals, left_col_x)
     draw_goal_column(away_goals, right_col_x)
