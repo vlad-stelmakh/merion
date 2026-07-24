@@ -1,4 +1,4 @@
-"""Telegram-бот для генерации комментария с таймкодами голов."""
+"""Telegram-бот: картинка турнира → ссылки → таймкоды YouTube."""
 
 from __future__ import annotations
 
@@ -16,75 +16,92 @@ from aiogram.enums import ParseMode
 from aiogram.types import BufferedInputFile, Message
 from dotenv import load_dotenv
 
-from output import MatchOutput, build_match_output
-from parser import extract_youtube_urls, parse_match_results
+from image_parser import parse_tournament_image
+from output import MatchOutput, build_comment_output
+from parser import Goal, Half, MatchResult, extract_youtube_urls, parse_match_results
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-HELP_TEXT = """Привет! Я делаю <b>картинку с результатом</b> и подпись с таймкодами для YouTube.
+HELP_TEXT = """Привет! Я делаю <b>таймкоды YouTube</b> по картинке с результатом матча.
 
-<b>Быстрый способ</b> — одним сообщением:
-1. Текст с результатами
-2. Две ссылки на 1-й и 2-й тайм
+<b>Как пользоваться</b>
+1. /new
+2. Пришли <b>картинку</b> из группы турнира (как в F.F.F.)
+3. Пришли <b>2 ссылки</b> на 1-й и 2-й тайм одним сообщением
 
-<b>Пошаговый способ</b>
-/new → текст → ссылка 1-го тайма → ссылка 2-го тайма
+<b>Ответ</b> — готовый текст с таймкодами для комментария YouTube.
 
-<b>Формат по таймам</b>
-<code>1-й тайм
-
-6' Олег Степанов (Дима Дидимер)
-13' Серго (Дима Дидимер)
-
-2-й тайм
-
-41' Александр Косенков
-48' Александр Косенков</code>
-
-<b>Формат со счётом</b> — строка <code>Команда 3:2 Команда</code>, голы через пустую строку между командами.
-
-Таймкод в подписи = минута − 10 сек (6' → 5:50).
+Таймы по 25 минут: гол 41' → <code>15:50</code> во 2-м видео.
+/cancel — отмена
 """
 
 
 class MatchForm(StatesGroup):
-    waiting_results = State()
-    waiting_first_half_url = State()
-    waiting_second_half_url = State()
+    waiting_image = State()
+    waiting_video_urls = State()
 
 
-def _assign_half_urls(urls: list[str]) -> tuple[str, str] | None:
-    if len(urls) < 2:
-        return None
-    return urls[0], urls[1]
+def _match_to_state(match: MatchResult) -> dict:
+    return {
+        "home_team": match.home_team,
+        "away_team": match.away_team,
+        "score_home": match.score_home,
+        "score_away": match.score_away,
+        "goals": [
+            {
+                "minute": g.minute,
+                "scorer": g.scorer,
+                "half": g.half.value,
+                "side": g.side,
+            }
+            for g in match.goals
+        ],
+    }
 
 
-def _try_generate_from_single_message(text: str) -> MatchOutput | None:
-    urls = extract_youtube_urls(text)
-    if len(urls) < 2:
-        return None
+def _match_from_state(data: dict) -> MatchResult:
+    return MatchResult(
+        home_team=data.get("home_team"),
+        away_team=data.get("away_team"),
+        score_home=data.get("score_home"),
+        score_away=data.get("score_away"),
+        goals=[
+            Goal(
+                minute=g["minute"],
+                scorer=g["scorer"],
+                half=Half(g["half"]),
+                side=g.get("side"),
+            )
+            for g in data.get("goals", [])
+        ],
+    )
 
-    match = parse_match_results(text)
-    if not match.goals:
-        return None
 
-    first_url, second_url = urls[0], urls[1]
-    return build_match_output(match, first_url, second_url)
+def _summary(match: MatchResult) -> str:
+    teams = ""
+    if match.home_team and match.away_team:
+        sh = match.score_home if match.score_home is not None else "?"
+        sa = match.score_away if match.score_away is not None else "?"
+        teams = f"\n<b>{match.home_team}</b> {sh}:{sa} <b>{match.away_team}</b>"
+    first = len([g for g in match.goals if g.half == Half.FIRST])
+    second = len([g for g in match.goals if g.half == Half.SECOND])
+    return f"Нашёл <b>{len(match.goals)}</b> голов ({first} в 1-м, {second} во 2-м тайме).{teams}"
 
 
 async def _send_result(message: Message, result: MatchOutput) -> None:
-    photo = BufferedInputFile(result.image_png, filename="match_result.png")
-    await message.answer_photo(photo=photo, caption=result.caption)
+    if result.image_png:
+        photo = BufferedInputFile(result.image_png, filename="match_result.png")
+        await message.answer_photo(photo=photo, caption=result.caption[:1024])
+    else:
+        await message.answer(result.caption)
 
 
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await message.answer(
-        "Привет! Отправь /new чтобы начать, или /help для инструкции.",
-    )
+    await message.answer("Привет! /new — начать. /help — инструкция.")
 
 
 async def cmd_help(message: Message) -> None:
@@ -93,10 +110,10 @@ async def cmd_help(message: Message) -> None:
 
 async def cmd_new(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await state.set_state(MatchForm.waiting_results)
+    await state.set_state(MatchForm.waiting_image)
     await message.answer(
-        "Пришли текст с результатами матча и голами.\n\n"
-        "Можно сразу добавить 2 ссылки на таймы — тогда отвечу сразу.",
+        "Пришли <b>картинку с результатом</b> из группы турнира.",
+        parse_mode=ParseMode.HTML,
     )
 
 
@@ -105,62 +122,54 @@ async def cmd_cancel(message: Message, state: FSMContext) -> None:
     await message.answer("Отменено. /new — начать заново.")
 
 
-async def handle_results(message: Message, state: FSMContext) -> None:
-    text = message.text or ""
-    ready = _try_generate_from_single_message(text)
-    if ready:
-        await state.clear()
-        await _send_result(message, ready)
+async def handle_image(message: Message, state: FSMContext, bot: Bot) -> None:
+    if message.photo:
+        file_id = message.photo[-1].file_id
+    elif message.document and (message.document.mime_type or "").startswith("image/"):
+        file_id = message.document.file_id
+    else:
+        await message.answer("Нужна картинка (фото). /help — инструкция.")
         return
 
-    match = parse_match_results(text)
-    if not match.goals:
+    wait = await message.answer("Читаю картинку…")
+
+    try:
+        file = await bot.get_file(file_id)
+        if not file.file_path:
+            raise ValueError("Не удалось скачать файл.")
+        downloaded = await bot.download_file(file.file_path)
+        image_bytes = downloaded.read()
+        match = await asyncio.to_thread(parse_tournament_image, image_bytes)
+    except Exception as exc:
+        logger.exception("OCR failed")
+        await wait.edit_text(f"Не смог разобрать картинку: {exc}\n\nПопробуй другое фото или /cancel.")
+        return
+
+    await state.update_data(match=_match_to_state(match))
+    await state.set_state(MatchForm.waiting_video_urls)
+    await wait.edit_text(
+        f"{_summary(match)}\n\n"
+        "Теперь пришли <b>2 ссылки</b> на YouTube (1-й и 2-й тайм) одним сообщением.",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def handle_video_urls(message: Message, state: FSMContext) -> None:
+    text = message.text or ""
+    urls = extract_youtube_urls(text)
+    if len(urls) < 2:
         await message.answer(
-            "Не нашёл голов в тексте. Проверь формат или отправь /help.",
+            "Нужны 2 ссылки на YouTube.\nПример:\n"
+            "https://youtu.be/VIDEO1\n"
+            "https://youtu.be/VIDEO2",
         )
         return
 
-    await state.update_data(results_text=text)
-    await state.set_state(MatchForm.waiting_first_half_url)
-    teams_hint = ""
-    if match.home_team and match.away_team:
-        teams_hint = f"\n\nМатч: {match.home_team} — {match.away_team}"
-    await message.answer(
-        f"Нашёл {len(match.goals)} голов.{teams_hint}\n\n"
-        "Теперь пришли ссылку на запись <b>1-го тайма</b>.",
-        parse_mode=ParseMode.HTML,
-    )
-
-
-async def handle_first_half_url(message: Message, state: FSMContext) -> None:
-    text = message.text or ""
-    urls = extract_youtube_urls(text)
-    if not urls:
-        await message.answer("Нужна ссылка на YouTube. Пример: https://youtu.be/XXXXXXXXXXX")
-        return
-
-    await state.update_data(first_half_url=urls[0])
-    await state.set_state(MatchForm.waiting_second_half_url)
-    await message.answer(
-        "Отлично. Теперь ссылка на запись <b>2-го тайма</b>.",
-        parse_mode=ParseMode.HTML,
-    )
-
-
-async def handle_second_half_url(message: Message, state: FSMContext) -> None:
-    text = message.text or ""
-    urls = extract_youtube_urls(text)
-    if not urls:
-        await message.answer("Нужна ссылка на YouTube.")
-        return
-
     data = await state.get_data()
-    results_text = data.get("results_text", "")
-    first_half_url = data.get("first_half_url", "")
+    match = _match_from_state(data.get("match", {}))
 
     try:
-        match = parse_match_results(results_text)
-        result = build_match_output(match, first_half_url, urls[0])
+        result = build_comment_output(match, urls[0], urls[1])
     except ValueError as exc:
         await message.answer(f"Ошибка: {exc}")
         return
@@ -170,26 +179,13 @@ async def handle_second_half_url(message: Message, state: FSMContext) -> None:
 
 
 async def handle_outside_flow(message: Message, state: FSMContext) -> None:
-    text = message.text or ""
-    ready = _try_generate_from_single_message(text)
-    if ready:
-        await _send_result(message, ready)
-        return
-
-    urls = extract_youtube_urls(text)
-    if len(urls) >= 2:
-        await message.answer(
-            "Ссылки есть, но в тексте не найдены голы. Добавь результат матча или /new.",
-        )
-        return
-
-    await message.answer("Отправь /new чтобы начать, или /help для примера.")
+    await message.answer("Отправь /new чтобы начать, или /help для инструкции.")
 
 
 async def main() -> None:
     token = os.getenv("BOT_TOKEN")
     if not token:
-        logger.error("Укажи BOT_TOKEN в .env или переменных окружения.")
+        logger.error("Укажи BOT_TOKEN в .env")
         sys.exit(1)
 
     bot = Bot(token=token)
@@ -200,18 +196,18 @@ async def main() -> None:
     dp.message.register(cmd_new, Command("new"))
     dp.message.register(cmd_cancel, Command("cancel"))
     dp.message.register(
-        handle_results,
-        MatchForm.waiting_results,
+        handle_image,
+        MatchForm.waiting_image,
+        F.photo | F.document,
+    )
+    dp.message.register(
+        lambda m, s: m.answer("Сначала пришли картинку с результатом матча."),
+        MatchForm.waiting_image,
         F.text,
     )
     dp.message.register(
-        handle_first_half_url,
-        MatchForm.waiting_first_half_url,
-        F.text,
-    )
-    dp.message.register(
-        handle_second_half_url,
-        MatchForm.waiting_second_half_url,
+        handle_video_urls,
+        MatchForm.waiting_video_urls,
         F.text,
     )
     dp.message.register(handle_outside_flow, F.text)

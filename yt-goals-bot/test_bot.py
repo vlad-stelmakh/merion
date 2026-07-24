@@ -2,7 +2,8 @@
 
 import unittest
 
-from generator import generate_comment, goal_to_seconds, goal_to_timestamp, goal_video_minute, minute_to_seconds, seconds_to_timestamp
+from generator import generate_comment, goal_to_timestamp, goal_video_minute, minute_to_seconds, seconds_to_timestamp
+from image_parser import _half_from_minute, _parse_goal_text
 from image_generator import generate_match_image
 from parser import Half, parse_match_results
 
@@ -43,8 +44,8 @@ class ParserTests(unittest.TestCase):
         match = parse_match_results(EXAMPLE_TEXT)
         first = [g for g in match.goals if g.half.value == 1]
         second = [g for g in match.goals if g.half.value == 2]
-        self.assertEqual(len(first), 3)
-        self.assertEqual(len(second), 6)
+        self.assertEqual(len(first), 2)  # 15', 22' (40' > 25 → 2-й тайм)
+        self.assertEqual(len(second), 7)
 
     def test_team_sides_pakuta(self) -> None:
         match = parse_match_results(PAKUTA_TEXT)
@@ -72,7 +73,16 @@ HALF_FORMAT_TEXT = """1-й тайм
 48' Александр Косенков"""
 
 
-class HalfFormatTests(unittest.TestCase):
+class ImageParserTests(unittest.TestCase):
+    def test_parse_goal_line(self) -> None:
+        self.assertEqual(_parse_goal_text("6' Олег Степанов (Дима Дидимер)"), (6, "Олег Степанов (Дима Дидимер)"))
+        self.assertEqual(_parse_goal_text("41' Александр Косенков"), (41, "Александр Косенков"))
+
+    def test_half_from_match_minute(self) -> None:
+        self.assertEqual(_half_from_minute(21), Half.FIRST)
+        self.assertEqual(_half_from_minute(41), Half.SECOND)
+
+
     def test_parse_half_sections(self) -> None:
         match = parse_match_results(HALF_FORMAT_TEXT)
         self.assertEqual(len(match.goals), 11)

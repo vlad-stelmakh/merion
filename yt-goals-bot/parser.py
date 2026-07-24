@@ -73,22 +73,28 @@ def _parse_score_line(line: str) -> tuple[str, str, int, int] | None:
     )
 
 
-def _resolve_half(minute: int, current_half: Half) -> Half:
-    if minute > 45:
+def _resolve_half(minute: int, current_half: Half, trust_section: bool = False) -> Half:
+    if trust_section:
+        return current_half
+    from generator import HALF_MINUTES
+
+    if current_half == Half.SECOND:
         return Half.SECOND
-    return current_half
+    if minute > HALF_MINUTES:
+        return Half.SECOND
+    return Half.FIRST
 
 
-def _goals_from_minute_first_line(line: str, half: Half) -> list[Goal]:
+def _goals_from_minute_first_line(line: str, half: Half, trust_section: bool = False) -> list[Goal]:
     match = MINUTE_FIRST_RE.match(line)
     if not match:
         return []
     minute = int(match.group("minute"))
     scorer = match.group("scorer").strip()
-    return [Goal(minute=minute, scorer=scorer, half=_resolve_half(minute, half))]
+    return [Goal(minute=minute, scorer=scorer, half=_resolve_half(minute, half, trust_section))]
 
 
-def _goals_from_scorer_line(line: str, half: Half) -> list[Goal]:
+def _goals_from_scorer_line(line: str, half: Half, trust_section: bool = False) -> list[Goal]:
     minutes = [int(m) for m in MINUTE_TOKEN_RE.findall(line)]
     if not minutes:
         return []
@@ -100,7 +106,7 @@ def _goals_from_scorer_line(line: str, half: Half) -> list[Goal]:
         return []
 
     return [
-        Goal(minute=minute, scorer=scorer, half=_resolve_half(minute, half))
+        Goal(minute=minute, scorer=scorer, half=_resolve_half(minute, half, trust_section))
         for minute in minutes
     ]
 
@@ -133,8 +139,8 @@ def parse_match_results(text: str) -> MatchResult:
     score_away: int | None = None
     goals: list[Goal] = []
 
-    has_half_markers = bool(
-        HALF_MARKER_RE.search(text, re.MULTILINE) or SECOND_HALF_MARKER_RE.search(text, re.MULTILINE)
+    has_half_markers = any(
+        _is_half_marker(line.strip()) is not None for line in text.splitlines()
     )
 
     # Разделение команд по пустым строкам (если нет явных таймов)
@@ -173,14 +179,14 @@ def parse_match_results(text: str) -> MatchResult:
             if not has_half_markers and goal_block_index in goal_block_sides:
                 current_side = goal_block_sides[goal_block_index]
 
-        minute_goals = _goals_from_minute_first_line(line, current_half)
+        minute_goals = _goals_from_minute_first_line(line, current_half, has_half_markers)
         if minute_goals:
             for goal in minute_goals:
                 goal.side = None if has_half_markers else current_side
                 goals.append(goal)
             continue
 
-        scorer_goals = _goals_from_scorer_line(line, current_half)
+        scorer_goals = _goals_from_scorer_line(line, current_half, has_half_markers)
         if scorer_goals:
             if not seen_scorer_style and goals and not has_half_markers:
                 current_side = "away"

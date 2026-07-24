@@ -1,4 +1,4 @@
-"""Сборка результата: картинка + подпись с YouTube-ссылками."""
+"""Сборка результата для бота."""
 
 from __future__ import annotations
 
@@ -11,8 +11,17 @@ from parser import MatchResult
 
 @dataclass
 class MatchOutput:
-    image_png: bytes
     caption: str
+    image_png: bytes | None = None
+
+
+def build_comment_output(
+    match: MatchResult,
+    first_half_url: str,
+    second_half_url: str,
+) -> MatchOutput:
+    caption = generate_comment(match, first_half_url, second_half_url)
+    return MatchOutput(caption=caption)
 
 
 def build_match_output(
@@ -20,8 +29,6 @@ def build_match_output(
     first_half_url: str,
     second_half_url: str,
 ) -> MatchOutput:
-    image_png = generate_match_image(match)
     caption = generate_comment(match, first_half_url, second_half_url)
-    if len(caption) > 1024:
-        caption = caption[:1020] + "..."
-    return MatchOutput(image_png=image_png, caption=caption)
+    image_png = generate_match_image(match)
+    return MatchOutput(caption=caption, image_png=image_png)
