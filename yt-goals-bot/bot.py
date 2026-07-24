@@ -29,8 +29,9 @@ HELP_TEXT = """Привет! Я делаю <b>таймкоды YouTube</b> по 
 
 <b>Как пользоваться</b>
 1. /new
-2. Пришли <b>картинку</b> из группы турнира (как в F.F.F.)
-3. Пришли <b>2 ссылки</b> на 1-й и 2-й тайм одним сообщением
+2. Пришли <b>картинку</b> из группы турнира
+   (лучше с <b>подписью</b> — список голов текстом)
+3. Пришли <b>2 ссылки</b> на 1-й и 2-й тайм
 
 <b>Ответ</b> — готовый текст с таймкодами для комментария YouTube.
 
@@ -112,7 +113,8 @@ async def cmd_new(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(MatchForm.waiting_image)
     await message.answer(
-        "Пришли <b>картинку с результатом</b> из группы турнира.",
+        "Пришли <b>картинку с результатом</b> из группы турнира.\n\n"
+        "Можно добавить <b>подпись</b> с голами — тогда разбор будет точнее.",
         parse_mode=ParseMode.HTML,
     )
 
@@ -139,7 +141,8 @@ async def handle_image(message: Message, state: FSMContext, bot: Bot) -> None:
             raise ValueError("Не удалось скачать файл.")
         downloaded = await bot.download_file(file.file_path)
         image_bytes = downloaded.read()
-        match = await asyncio.to_thread(parse_tournament_image, image_bytes)
+        caption = message.caption or ""
+        match = await asyncio.to_thread(parse_tournament_image, image_bytes, caption or None)
     except Exception as exc:
         logger.exception("OCR failed")
         await wait.edit_text(f"Не смог разобрать картинку: {exc}\n\nПопробуй другое фото или /cancel.")

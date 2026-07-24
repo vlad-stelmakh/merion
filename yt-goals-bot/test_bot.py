@@ -3,7 +3,7 @@
 import unittest
 
 from generator import generate_comment, goal_to_timestamp, goal_video_minute, minute_to_seconds, seconds_to_timestamp
-from image_parser import _half_from_minute, _parse_goal_text
+from image_parser import _half_from_minute, _parse_goals_from_text
 from image_generator import generate_match_image
 from parser import Half, parse_match_results
 
@@ -75,14 +75,27 @@ HALF_FORMAT_TEXT = """1-й тайм
 
 class ImageParserTests(unittest.TestCase):
     def test_parse_goal_line(self) -> None:
-        self.assertEqual(_parse_goal_text("6' Олег Степанов (Дима Дидимер)"), (6, "Олег Степанов (Дима Дидимер)"))
-        self.assertEqual(_parse_goal_text("41' Александр Косенков"), (41, "Александр Косенков"))
+        self.assertEqual(_parse_goals_from_text("6' Олег Степанов (Дима Дидимер)", "home")[0].minute, 6)
+
+    def test_reject_noise(self) -> None:
+        goals = _parse_goals_from_text("8' 2 KUCHA 41' Aleksandr Kosenkov", "away")
+        self.assertEqual(len(goals), 1)
+        self.assertEqual(goals[0].minute, 41)
+        self.assertIn("Kosenkov", goals[0].scorer)
+        self.assertEqual(_parse_goals_from_text("0' Aleksandr K senk v", "home"), [])
+
+    def test_split_merged_goals(self) -> None:
+        text = "40' Aleksandr Kosenkov (Andrei Rab) 41' Aleksandr Kosenkov"
+        goals = _parse_goals_from_text(text, "home")
+        self.assertEqual(len(goals), 2)
+        self.assertEqual(goals[1].minute, 41)
 
     def test_half_from_match_minute(self) -> None:
         self.assertEqual(_half_from_minute(21), Half.FIRST)
         self.assertEqual(_half_from_minute(41), Half.SECOND)
 
 
+class HalfFormatTests(unittest.TestCase):
     def test_parse_half_sections(self) -> None:
         match = parse_match_results(HALF_FORMAT_TEXT)
         self.assertEqual(len(match.goals), 11)
