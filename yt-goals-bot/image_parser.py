@@ -39,19 +39,36 @@ def _preprocess_crop(image: Image.Image, box: tuple[int, int, int, int]) -> np.n
     return np.array(crop.convert("RGB"))
 
 
+def _extract_ocr_texts(parts: list) -> list[str]:
+    texts: list[str] = []
+    for item in parts:
+        if isinstance(item, str):
+            if item.strip():
+                texts.append(item.strip())
+            continue
+        if len(item) == 3:
+            _box, text, conf = item
+            if conf > 0.15 and str(text).strip():
+                texts.append(str(text).strip())
+        elif len(item) == 2:
+            _box, text = item
+            if str(text).strip():
+                texts.append(str(text).strip())
+    return texts
+
+
 def _ocr_region(image: Image.Image, box: tuple[int, int, int, int]) -> str:
     arr = _preprocess_crop(image, box)
     parts = _reader().readtext(
         arr,
-        paragraph=True,
+        paragraph=False,
         min_size=8,
         contrast_ths=0.05,
         adjust_contrast=0.7,
         text_threshold=0.6,
         low_text=0.3,
     )
-    texts = [text for _box, text, conf in parts if conf > 0.15 and text.strip()]
-    return "\n".join(texts)
+    return "\n".join(_extract_ocr_texts(parts))
 
 
 def _clean_scorer(text: str) -> str:

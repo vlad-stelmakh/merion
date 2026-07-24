@@ -90,7 +90,14 @@ class ImageParserTests(unittest.TestCase):
         self.assertEqual(len(goals), 2)
         self.assertEqual(goals[1].minute, 41)
 
-    def test_half_from_match_minute(self) -> None:
+    def test_extract_ocr_texts_formats(self) -> None:
+        from image_parser import _extract_ocr_texts
+
+        three = [([[0, 0], [1, 0], [1, 1], [0, 1]], "Goal", 0.9)]
+        two = [[[[0, 0], [1, 0], [1, 1], [0, 1]], "Goal"]]
+        self.assertEqual(_extract_ocr_texts(three), ["Goal"])
+        self.assertEqual(_extract_ocr_texts(two), ["Goal"])
+
         self.assertEqual(_half_from_minute(21), Half.FIRST)
         self.assertEqual(_half_from_minute(41), Half.SECOND)
 
