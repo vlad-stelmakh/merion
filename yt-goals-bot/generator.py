@@ -74,41 +74,30 @@ def generate_comment(
     if match.home_team and match.away_team:
         if match.score_home is not None and match.score_away is not None:
             header = (
-                f"⚽ Голы матча {match.home_team} {match.score_home}:{match.score_away} "
+                f"⚽ {match.home_team} {match.score_home}:{match.score_away} "
                 f"{match.away_team}\n"
             )
         else:
-            header = f"⚽ Голы матча {match.home_team} — {match.away_team}\n"
+            header = f"⚽ {match.home_team} — {match.away_team}\n"
     else:
         header = "⚽ Голы матча\n"
 
-    lines = [
-        header,
-        f"1-й тайм: https://www.youtube.com/watch?v={first_id}",
-        f"2-й тайм: https://www.youtube.com/watch?v={second_id}",
-        "",
-    ]
+    lines = [header.rstrip(), ""]
 
     first_half_goals = [g for g in match.goals if g.half == Half.FIRST]
     second_half_goals = [g for g in match.goals if g.half == Half.SECOND]
 
     if first_half_goals:
-        lines.append("—— 1-й тайм ——")
+        lines.append("1-й тайм")
         for goal in first_half_goals:
-            seconds = minute_to_seconds(goal.minute)
-            ts = seconds_to_timestamp(seconds)
-            link = build_youtube_link(first_id, seconds)
+            ts = seconds_to_timestamp(minute_to_seconds(goal.minute))
             lines.append(f"{ts} — {goal.scorer}")
-            lines.append(link)
         lines.append("")
 
     if second_half_goals:
-        lines.append("—— 2-й тайм ——")
+        lines.append("2-й тайм")
         for goal in second_half_goals:
-            seconds = minute_to_seconds(goal.minute)
-            ts = seconds_to_timestamp(seconds)
-            link = build_youtube_link(second_id, seconds)
+            ts = seconds_to_timestamp(minute_to_seconds(goal.minute))
             lines.append(f"{ts} — {goal.scorer}")
-            lines.append(link)
 
     return "\n".join(lines).strip()

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from generator import minute_to_seconds, seconds_to_timestamp
 from parser import Goal, MatchResult
 
 # Цвета в стиле примера
@@ -101,6 +102,12 @@ def _fit_team_name(
         font = _font(size, bold=True)
         if _text_width(draw, name, font) <= max_width:
             return font, name
+    font = _font(16, bold=True)
+    if len(name) > 16:
+        return font, name[:15] + "…"
+    return font, name
+
+
 def _team_initials(name: str) -> str:
     parts = [p for p in name.replace(".", " ").split() if p]
     if not parts:
@@ -117,7 +124,8 @@ def _text_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont)
 
 def _goal_line_parts(minute: int, scorer: str) -> tuple[str, str | None]:
     name, assist = _split_scorer_assist(scorer)
-    return f"{minute}'", name + (f" {assist}" if assist else "")
+    yt_time = seconds_to_timestamp(minute_to_seconds(minute))
+    return yt_time, name + (f" {assist}" if assist else "")
 
 
 def _draw_goal_line(

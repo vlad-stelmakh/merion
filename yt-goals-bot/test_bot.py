@@ -67,10 +67,9 @@ class GeneratorTests(unittest.TestCase):
             "https://www.youtube.com/watch?v=BBBB2222",
         )
         self.assertIn("FC Kucha 3:6 FC Serega United", comment)
-        self.assertIn("AAAA1111", comment)
-        self.assertIn("BBBB2222", comment)
-        self.assertIn("14:50", comment)  # 15' - 10 сек
-        self.assertIn("Filipp PlusMinus (Sandro Karchava)", comment)
+        self.assertIn("14:50 — Filipp PlusMinus", comment)
+        self.assertIn("10:50 — Evgensky", comment)
+        self.assertNotIn("15'", comment)
 
     def test_generate_match_image(self) -> None:
         match = parse_match_results(PAKUTA_TEXT)
